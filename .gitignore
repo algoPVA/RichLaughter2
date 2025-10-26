@@ -1,0 +1,16 @@
+DataForTests/
+TestDeepTests/
+TestResults/
+TestNewResults/
+logs/
+logsOffTest/
+logsMT/
+TestOtTrades/
+dbs/backups/
+dbs/archive/
+dbs/
+Screening/strat_picks
+modelML/RL_models/temp/
+.env
+.vs
+__pycache__
