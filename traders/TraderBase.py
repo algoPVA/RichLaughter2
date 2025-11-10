@@ -5,7 +5,7 @@ from typing import Dict, List, Any, Optional, Union
 from wss.WSBase import WSBase
 
 class TraderBase:
-    def __init__(self, symbols:List[str],timeframes:List[str|int],quantity:List[int],ws:WSBase = (WSBase,tuple()),sufix_debug='TB',need_debug=False):
+    def __init__(self, symbols:List[str],timeframes:List[str|int],quantity:List[int],ws:WSBase = (WSBase,dict()),sufix_debug='TB',need_debug=False):
         self.symbols = symbols
         self.timeframes = timeframes
         self.quantity_map = dict(zip(self.symbols, quantity))

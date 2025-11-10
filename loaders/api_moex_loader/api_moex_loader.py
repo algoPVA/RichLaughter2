@@ -35,6 +35,8 @@ class ApiMoexLoader:
         df = df.rename(columns={'value': "vol_coin", 'begin': 'ms'})
         df['ms'] = pd.to_datetime(df['ms'])
         df['weekday'] = df['ms'].dt.dayofweek
+        df['hour'] = df['ms'].dt.hour
+        df['minute'] = df['ms'].dt.minute
         df['direction'] = np.where(df['open'] < df['close'], 1, -1)
         df['middle'] = (df['high'] + df['low']) / 2
         df = df.reset_index(drop=True)

@@ -1,10 +1,23 @@
-from loaders.api_moex_loader.api_moex_loader import ApiMoexLoader
-from datetime import date,timedelta
+from traders.TestTrader.TestTrader import TestTrader
+from wss.work_ws import WorkWS
 
-today = date.today()
-start_date = str(today - timedelta(days=5))
-# # start_date = '2025-02-01'
+charts = {
+    '1min': {
+        'IMOEXF':'data_for_tests\data_from_moex\IMOEXF_1_1762793370.csv',
+        'MMZ5':'data_for_tests\data_from_moex\MMZ5_1_1762793372.csv'
+        },
+    '10min': {
+        'IMOEXF':'data_for_tests\data_from_moex\IMOEXF_10_1762793370.csv',
+        'MMZ5':'data_for_tests\data_from_moex\MMZ5_10_1762793372.csv'
+        },
+}
 
-loader = ApiMoexLoader('IMOEXF','RFUD','forts','futures')
+tt1 = TestTrader(
+    ('IMOEXF','MMZ5'),
+    ('1min','10min'),
+    (1,1),
+    (WorkWS,{'period_dc':20}),
+    charts=charts
+)
 
-loader.save_df(start_date)
+tt1.check_fast()
