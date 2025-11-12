@@ -2,10 +2,20 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
+from time import time
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Union
 from traders.TraderBase import TraderBase
 from wss.WSBase import WSBase
+
+def duration_time(func):
+    def wrapper(self, *args, **kwargs):
+        start = time()
+        print('start', func.__name__)
+        result = func(self, *args, **kwargs)
+        print('Time:', time() - start)
+        return result
+    return wrapper
 
 class TestTrader(TraderBase):
     def __init__(self, 
@@ -35,26 +45,31 @@ class TestTrader(TraderBase):
         self.charts = charts
         self.read_dfs()
         self.get_total_time_range()
-        self.trade_data = {
-            symbol : {
-                'total':0,
-                'count':0,
-                'fees': 0,
-                'total_wfees_per':0,
-                'equity':[0],
-                'equity_fee':[0],
-                'pos':0,
-                'mp':0,
-                'o_longs':[],
-                'o_shorts':[],
-                'c_longs':[],
-                'c_shorts':[]
-            } for symbol in self.symbols
-        }
+        self.reload_data()
         self.fee_one_p = (fee / 2) * 100
-        self.open_fee = {symbol:0 for symbol in self.symbols}
         self.close_on_time = close_on_time
         self.close_map = close_map
+
+    def reload_data(self):
+        self.trade_data = {
+            symbol : {
+                'total':0, #сумма без комиссии (возможно стоит убрать уже есть в equity)
+                'count':0, #количество разворотов
+                'amount':0, #размер сделок
+                'fees': 0, #комиссия в ???
+                'total_wfees_per':0, #прибыль в процентах с учетом комиссии
+                'equity':[0], #динамика дохода
+                'equity_fee':[0], #динамика дохода с комиссией
+                'pos':0, #текущая позиция
+                'mp':0, #текущая цена
+                'o_longs':[], #входы в лонг
+                'o_shorts':[], #входы в шорт
+                'c_longs':[], #закрытие лонгов
+                'c_shorts':[], #закрытие шортов
+                # добавить учет комиссии для втб
+            } for symbol in self.symbols
+        }
+        self.open_fee = {symbol:0 for symbol in self.symbols}
 
     def read_dfs(self):
         for t in self.charts:
@@ -126,134 +141,237 @@ class TestTrader(TraderBase):
     def work_need_pos(self, need_pos, last_prices, last_xs):
         for s in self.symbols:
             if need_pos[s] != self.trade_data[s]['pos']:
-                new_pos = need_pos[s]
-                old_pos = self.trade_data[s]['pos']
-                new_price = last_prices[s]
-                feei = (self.fee * new_price) / 100
-                old_price = self.trade_data[s]['mp']
-                lx = last_xs[s]
-                delta_pos = new_pos - old_pos
-                cur_feei = feei * abs(delta_pos)
-                abs_old_pos = abs(old_pos)
-                abs_new_pos = abs(new_pos)
-                last_equity = self.trade_data[s]['equity'][-1]
-                last_equity_fee = self.trade_data[s]['equity_fee'][-1]
-                
-                # long operations
-                if delta_pos > 0: # add
-                    if old_pos > -1: # add_long or open_long
-                        if old_pos == 0: # open_long
-                            self.trade_data[s]['mp'] = new_price
-                            self.open_fee[s] = cur_feei
-                        else: # add_long
-                            self.trade_data[s]['mp'] = (old_price * old_pos + new_price * delta_pos) / new_pos
-                            self.open_fee[s] += cur_feei
-                        self.trade_data[s]['total_wfees_per'] -= self.fee_one_p * delta_pos
-                        self.trade_data[s]['fees'] += cur_feei
-                        self.trade_data[s]['o_longs'].append((lx, new_price))
-                        self.trade_data[s]['count'] += 1
-                    else: # close_short (pos < 0) 
-                        new_pos_abs = abs(new_pos)
-                        old_pos_abs = abs(old_pos)
-                        delta = old_price - new_price
-                        
-                        if new_pos == 0: # close_short completely
-                            full_delta = delta * old_pos_abs
-                            self.trade_data[s]['total'] += full_delta
-                            reward = (((delta / new_price) * 100) - self.fee_one_p) * old_pos_abs
-                            self.trade_data[s]['total_wfees_per'] += reward
-                            self.trade_data[s]['fees'] += cur_feei
-                            self.trade_data[s]['equity'].append(last_equity + full_delta)
-                            self.trade_data[s]['equity_fee'].append(last_equity_fee + (full_delta - cur_feei - self.open_fee[s]))
-                            self.open_fee[s] = 0
-                            self.trade_data[s]['c_shorts'].append((lx, new_price))
-                            
-                        elif new_pos > 0: # close_short and open_long
-                            full_delta = delta * old_pos_abs
-                            reward = ((delta / new_price) * 100 * old_pos_abs) - self.fee_one_p * delta_pos
-                            self.trade_data[s]['total'] += full_delta
-                            self.trade_data[s]['total_wfees_per'] += reward
-                            self.trade_data[s]['fees'] += cur_feei
-                            self.trade_data[s]['equity'].append(last_equity + full_delta)
-                            self.trade_data[s]['equity_fee'].append(last_equity_fee + (full_delta - cur_feei - self.open_fee[s]))
-                            self.trade_data[s]['mp'] = new_price
-                            self.open_fee[s] = feei * new_pos_abs
-                            self.trade_data[s]['o_longs'].append((lx, new_price))
-                            
-                        else: # change_short (reduce short)
-                            delta_short = abs(delta_pos)  # количество закрытых шортов
-                            partial_delta = delta * delta_short
-                            reward = (((delta / new_price) * 100) - self.fee_one_p) * delta_short
-                            self.trade_data[s]['total'] += partial_delta
-                            self.trade_data[s]['total_wfees_per'] += reward
-                            self.trade_data[s]['fees'] += cur_feei
-                            self.trade_data[s]['equity'].append(last_equity + partial_delta)
-                            # Пересчитываем open_fee для оставшейся позиции
-                            fee_ratio = new_pos_abs / old_pos_abs
-                            equity_fee_delta = partial_delta - cur_feei - self.open_fee[s] * (delta_short / old_pos_abs)
-                            self.trade_data[s]['equity_fee'].append(last_equity_fee + equity_fee_delta)
-                            self.open_fee[s] = self.open_fee[s] * fee_ratio
-                            self.trade_data[s]['c_shorts'].append((lx, new_price))
-                
-                # short operations  
-                elif delta_pos < 0: # sub
-                    if old_pos < 1: # add_short or open_short
-                        if old_pos == 0: # open_short
-                            self.trade_data[s]['mp'] = new_price
-                            self.open_fee[s] = cur_feei
-                        else: # add_short
-                            self.trade_data[s]['mp'] = (abs_old_pos * old_price + abs(delta_pos) * new_price) / abs_new_pos
-                            self.open_fee[s] += cur_feei
-                        self.trade_data[s]['total_wfees_per'] -= self.fee_one_p * abs(delta_pos)
-                        self.trade_data[s]['fees'] += cur_feei
-                        self.trade_data[s]['o_shorts'].append((lx, new_price))
-                        self.trade_data[s]['count'] += 1
-                    else: # close_long (pos > 0)
-                        new_pos_abs = abs(new_pos)
-                        delta = new_price - old_price
-                        
-                        if new_pos == 0: # close_long completely
-                            full_delta = delta * old_pos
-                            reward = (((delta / new_price) * 100) - self.fee_one_p) * old_pos
-                            self.trade_data[s]['total'] += full_delta
-                            self.trade_data[s]['total_wfees_per'] += reward
-                            self.trade_data[s]['fees'] += cur_feei
-                            self.trade_data[s]['equity'].append(last_equity + full_delta)
-                            self.trade_data[s]['equity_fee'].append(last_equity_fee + (full_delta - cur_feei - self.open_fee[s]))
-                            self.open_fee[s] = 0
-                            self.trade_data[s]['c_longs'].append((lx, new_price))
-                            
-                        elif new_pos < 0: # close_long and open_short
-                            full_delta = delta * old_pos
-                            reward = ((delta / new_price) * 100 * old_pos) - self.fee_one_p * abs(delta_pos)
-                            self.trade_data[s]['total'] += full_delta
-                            self.trade_data[s]['total_wfees_per'] += reward
-                            self.trade_data[s]['fees'] += cur_feei
-                            self.trade_data[s]['equity'].append(last_equity + full_delta)
-                            self.trade_data[s]['equity_fee'].append(last_equity_fee + (full_delta - cur_feei - self.open_fee[s]))
-                            self.trade_data[s]['mp'] = new_price
-                            self.open_fee[s] = feei * new_pos_abs
-                            self.trade_data[s]['o_shorts'].append((lx, new_price))
-                            
-                        else: # change_long (reduce long)
-                            delta_long = old_pos - new_pos  # количество закрытых лонгов
-                            partial_delta = delta * delta_long
-                            reward = (((delta / new_price) * 100) - self.fee_one_p) * delta_long
-                            self.trade_data[s]['total'] += partial_delta
-                            self.trade_data[s]['total_wfees_per'] += reward
-                            self.trade_data[s]['fees'] += cur_feei
-                            self.trade_data[s]['equity'].append(last_equity + partial_delta)
-                            # Пересчитываем open_fee для оставшейся позиции
-                            fee_ratio = new_pos / old_pos
-                            equity_fee_delta = partial_delta - cur_feei - self.open_fee[s] * (delta_long / old_pos)
-                            self.trade_data[s]['equity_fee'].append(last_equity_fee + equity_fee_delta)
-                            self.open_fee[s] = self.open_fee[s] * fee_ratio
-                            self.trade_data[s]['c_longs'].append((lx, new_price))
-                
-                self.trade_data[s]['pos'] = new_pos
+                self._process_position_change(s, need_pos[s], last_prices[s], last_xs[s])
+
+    def _process_position_change(self, symbol, new_pos, new_price, last_x):
+        """Основной метод обработки изменения позиции"""
+        old_pos = self.trade_data[symbol]['pos']
+        delta_pos = new_pos - old_pos
+        
+        if delta_pos > 0:
+            self._handle_positive_delta(symbol, new_pos, old_pos, new_price, last_x)
+        elif delta_pos < 0:
+            self._handle_negative_delta(symbol, new_pos, old_pos, new_price, last_x)
+        if delta_pos != 0:
+            self.trade_data[symbol]['pos'] = new_pos
+
+    def _handle_positive_delta(self, symbol, new_pos, old_pos, new_price, last_x):
+        """Обработка увеличения позиции (delta_pos > 0)"""
+        if old_pos >= 0:  # add_long или open_long
+            self._handle_long_operations(symbol, new_pos, old_pos, new_price, last_x)
+        else:  # close_short (pos < 0)
+            self._handle_short_closing(symbol, new_pos, old_pos, new_price, last_x)
+
+    def _handle_negative_delta(self, symbol, new_pos, old_pos, new_price, last_x):
+        """Обработка уменьшения позиции (delta_pos < 0)"""
+        if old_pos <= 0:  # add_short или open_short
+            self._handle_short_operations(symbol, new_pos, old_pos, new_price, last_x)
+        else:  # close_long (pos > 0)
+            self._handle_long_closing(symbol, new_pos, old_pos, new_price, last_x)
+
+    def _handle_long_operations(self, symbol, new_pos, old_pos, new_price, last_x):
+        """Обработка операций с лонгами (открытие/добавление)"""
+        delta_pos = new_pos - old_pos
+        feei = (self.fee * new_price) / 100
+        cur_feei = feei * delta_pos
+        
+        if old_pos == 0:  # open_long
+            self.trade_data[symbol]['mp'] = new_price
+            self.open_fee[symbol] = cur_feei
+        else:  # add_long
+            old_price = self.trade_data[symbol]['mp']
+            self.trade_data[symbol]['mp'] = (old_price * old_pos + new_price * (new_pos - old_pos)) / new_pos
+            self.open_fee[symbol] += cur_feei
+        
+        self._update_fee_metrics(symbol, delta_pos, cur_feei)
+        self.trade_data[symbol]['o_longs'].append((last_x, new_price))
+        self.trade_data[symbol]['count'] += 1
+        self.trade_data[symbol]['amount'] += delta_pos
+
+    def _handle_short_operations(self, symbol, new_pos, old_pos, new_price, last_x):
+        """Обработка операций с шортами (открытие/добавление)"""
+        abs_delta_pos = abs(new_pos - old_pos)
+        feei = (self.fee * new_price) / 100
+        cur_feei = feei * abs_delta_pos
+        
+        if old_pos == 0:  # open_short
+            self.trade_data[symbol]['mp'] = new_price
+            self.open_fee[symbol] = cur_feei
+        else:  # add_short
+            old_price = self.trade_data[symbol]['mp']
+            abs_old_pos = abs(old_pos)
+            abs_new_pos = abs(new_pos)
+            self.trade_data[symbol]['mp'] = (abs_old_pos * old_price + abs_delta_pos * new_price) / abs_new_pos
+            self.open_fee[symbol] += cur_feei
+        
+        self._update_fee_metrics(symbol, abs_delta_pos, cur_feei)
+        self.trade_data[symbol]['o_shorts'].append((last_x, new_price))
+        self.trade_data[symbol]['count'] += 1
+        self.trade_data[symbol]['amount'] += abs_delta_pos
+
+    def _handle_short_closing(self, symbol, new_pos, old_pos, new_price, last_x):
+        """Обработка закрытия шортовой позиции"""
+        old_price = self.trade_data[symbol]['mp']
+        delta = old_price - new_price
+        old_pos_abs = abs(old_pos)
+        delta_pos = new_pos - old_pos
+        feei = (self.fee * new_price) / 100
+        cur_feei = feei * abs(delta_pos)
+        
+        if new_pos == 0:  # close_short completely
+            self._close_short_completely(symbol, old_pos_abs, delta, new_price, cur_feei, last_x)
+        elif new_pos > 0:  # close_short and open_long
+            self._close_short_open_long(symbol, old_pos_abs, delta, new_price, delta_pos, cur_feei, last_x,new_pos)
+        else:  # change_short (reduce short)
+            self._reduce_short_position(symbol, new_pos, old_pos, delta, new_price, cur_feei, last_x)
+
+    def _handle_long_closing(self, symbol, new_pos, old_pos, new_price, last_x):
+        """Обработка закрытия лонговой позиции"""
+        old_price = self.trade_data[symbol]['mp']
+        delta = new_price - old_price
+        delta_pos = new_pos - old_pos
+        abs_delta_pos = abs(delta_pos)
+        feei = (self.fee * new_price) / 100
+        cur_feei = feei * abs_delta_pos
+        
+        if new_pos == 0:  # close_long completely
+            self._close_long_completely(symbol, old_pos, delta, new_price, cur_feei, last_x)
+        elif new_pos < 0:  # close_long and open_short
+            self._close_long_open_short(symbol, old_pos, delta, new_price, delta_pos, cur_feei, last_x,new_pos)
+        else:  # change_long (reduce long)
+            self._reduce_long_position(symbol, new_pos, old_pos, delta, new_price, cur_feei, last_x)
+
+    def _close_short_completely(self, symbol, old_pos_abs, delta, new_price, cur_feei, last_x):
+        """Полное закрытие шортовой позиции"""
+        full_delta = delta * old_pos_abs
+        reward = (((delta / new_price) * 100) - self.fee_one_p) * old_pos_abs
+        
+        self.trade_data[symbol]['total'] += full_delta
+        self.trade_data[symbol]['total_wfees_per'] += reward
+        self.trade_data[symbol]['fees'] += cur_feei
+        
+        last_equity = self.trade_data[symbol]['equity'][-1]
+        last_equity_fee = self.trade_data[symbol]['equity_fee'][-1]
+        self.trade_data[symbol]['equity'].append(last_equity + full_delta)
+        self.trade_data[symbol]['equity_fee'].append(last_equity_fee + (full_delta - cur_feei - self.open_fee[symbol]))
+        
+        self.open_fee[symbol] = 0
+        self.trade_data[symbol]['c_shorts'].append((last_x, new_price))
+
+    def _close_short_open_long(self, symbol, old_pos_abs, delta, new_price, delta_pos, cur_feei, last_x,new_pos):
+        """Закрытие шорта и открытие лонга"""
+        full_delta = delta * old_pos_abs
+        reward = ((delta / new_price) * 100 * old_pos_abs) - self.fee_one_p * delta_pos
+        
+        self.trade_data[symbol]['total'] += full_delta
+        self.trade_data[symbol]['total_wfees_per'] += reward
+        self.trade_data[symbol]['fees'] += cur_feei
+        
+        last_equity = self.trade_data[symbol]['equity'][-1]
+        last_equity_fee = self.trade_data[symbol]['equity_fee'][-1]
+        self.trade_data[symbol]['equity'].append(last_equity + full_delta)
+        self.trade_data[symbol]['equity_fee'].append(last_equity_fee + (full_delta - cur_feei - self.open_fee[symbol]))
+        
+        self.trade_data[symbol]['mp'] = new_price
+        self.open_fee[symbol] = ((self.fee * new_price) / 100) * abs(delta_pos)
+        self.trade_data[symbol]['c_shorts'].append((last_x, new_price))
+        self.trade_data[symbol]['o_longs'].append((last_x, new_price))
+        self.trade_data[symbol]['count'] += 1
+        self.trade_data[symbol]['amount'] += new_pos
+
+    def _reduce_short_position(self, symbol, new_pos, old_pos, delta, new_price, cur_feei, last_x):
+        """Частичное закрытие шортовой позиции"""
+        delta_short = abs(new_pos - old_pos)  # количество закрытых шортов
+        partial_delta = delta * delta_short
+        reward = (((delta / new_price) * 100) - self.fee_one_p) * delta_short
+        
+        self.trade_data[symbol]['total'] += partial_delta
+        self.trade_data[symbol]['total_wfees_per'] += reward
+        self.trade_data[symbol]['fees'] += cur_feei
+        
+        last_equity = self.trade_data[symbol]['equity'][-1]
+        last_equity_fee = self.trade_data[symbol]['equity_fee'][-1]
+        
+        # Пересчитываем open_fee для оставшейся позиции
+        new_pos_abs = abs(new_pos)
+        old_pos_abs = abs(old_pos)
+        fee_ratio = new_pos_abs / old_pos_abs
+        equity_fee_delta = partial_delta - cur_feei - self.open_fee[symbol] * (delta_short / old_pos_abs)
+        
+        self.trade_data[symbol]['equity'].append(last_equity + partial_delta)
+        self.trade_data[symbol]['equity_fee'].append(last_equity_fee + equity_fee_delta)
+        self.open_fee[symbol] = self.open_fee[symbol] * fee_ratio
+        self.trade_data[symbol]['c_shorts'].append((last_x, new_price))
+
+    def _close_long_completely(self, symbol, old_pos, delta, new_price, cur_feei, last_x):
+        """Полное закрытие лонговой позиции"""
+        full_delta = delta * old_pos
+        reward = (((delta / new_price) * 100) - self.fee_one_p) * old_pos
+        
+        self.trade_data[symbol]['total'] += full_delta
+        self.trade_data[symbol]['total_wfees_per'] += reward
+        self.trade_data[symbol]['fees'] += cur_feei
+        
+        last_equity = self.trade_data[symbol]['equity'][-1]
+        last_equity_fee = self.trade_data[symbol]['equity_fee'][-1]
+        self.trade_data[symbol]['equity'].append(last_equity + full_delta)
+        self.trade_data[symbol]['equity_fee'].append(last_equity_fee + (full_delta - cur_feei - self.open_fee[symbol]))
+        
+        self.open_fee[symbol] = 0
+        self.trade_data[symbol]['c_longs'].append((last_x, new_price))
+
+    def _close_long_open_short(self, symbol, old_pos, delta, new_price, delta_pos, cur_feei, last_x,new_pos):
+        """Закрытие лонга и открытие шорта"""
+        full_delta = delta * old_pos
+        reward = ((delta / new_price) * 100 * old_pos) - self.fee_one_p * abs(delta_pos)
+        
+        self.trade_data[symbol]['total'] += full_delta
+        self.trade_data[symbol]['total_wfees_per'] += reward
+        self.trade_data[symbol]['fees'] += cur_feei
+        
+        last_equity = self.trade_data[symbol]['equity'][-1]
+        last_equity_fee = self.trade_data[symbol]['equity_fee'][-1]
+        self.trade_data[symbol]['equity'].append(last_equity + full_delta)
+        self.trade_data[symbol]['equity_fee'].append(last_equity_fee + (full_delta - cur_feei - self.open_fee[symbol]))
+        
+        self.trade_data[symbol]['mp'] = new_price
+        self.open_fee[symbol] = ((self.fee * new_price) / 100) * abs(delta_pos)
+        self.trade_data[symbol]['c_longs'].append((last_x, new_price))
+        self.trade_data[symbol]['o_shorts'].append((last_x, new_price))
+        self.trade_data[symbol]['count'] += 1
+        self.trade_data[symbol]['amount'] += abs(new_pos)
+
+    def _reduce_long_position(self, symbol, new_pos, old_pos, delta, new_price, cur_feei, last_x):
+        """Частичное закрытие лонговой позиции"""
+        delta_long = old_pos - new_pos  # количество закрытых лонгов
+        partial_delta = delta * delta_long
+        reward = (((delta / new_price) * 100) - self.fee_one_p) * delta_long
+        
+        self.trade_data[symbol]['total'] += partial_delta
+        self.trade_data[symbol]['total_wfees_per'] += reward
+        self.trade_data[symbol]['fees'] += cur_feei
+        
+        last_equity = self.trade_data[symbol]['equity'][-1]
+        last_equity_fee = self.trade_data[symbol]['equity_fee'][-1]
+        
+        # Пересчитываем open_fee для оставшейся позиции
+        fee_ratio = new_pos / old_pos
+        equity_fee_delta = partial_delta - cur_feei - self.open_fee[symbol] * (delta_long / old_pos)
+        
+        self.trade_data[symbol]['equity'].append(last_equity + partial_delta)
+        self.trade_data[symbol]['equity_fee'].append(last_equity_fee + equity_fee_delta)
+        self.open_fee[symbol] = self.open_fee[symbol] * fee_ratio
+        self.trade_data[symbol]['c_longs'].append((last_x, new_price))
+
+    def _update_fee_metrics(self, symbol, delta_pos, cur_feei):
+        """Обновление метрик связанных с комиссиями"""
+        self.trade_data[symbol]['total_wfees_per'] -= self.fee_one_p * abs(delta_pos)
+        self.trade_data[symbol]['fees'] += cur_feei
 
 
-    def check_fast(self):
+
+    @duration_time
+    def check_fast_old(self):
         poss = self._check_position()
         self.ws.preprocessing(self.charts,poss)
         dfs = self.get_deep_copy_last_dfs()
@@ -272,191 +390,168 @@ class TestTrader(TraderBase):
             if self.close_on_time:
                 last_row = self.ws.last_dfs[tf1][self.symbols[0]].iloc[-1]
                 time_close = self.close_map[last_row['weekday']]
-                if last_row['ms'].hour >= time_close[0] and last_row['ms'].minute >= time_close[0]:
+                if last_row['ms'].hour >= time_close[0] and last_row['ms'].minute >= time_close[1]:
                     for s in need_pos:
                         need_pos[s] = 0
             self.work_need_pos(need_pos,last_prices,last_xs)
 
-
-            # for tf in self.ws.last_dfs:
-            #     for s in self.ws.last_dfs[tf]:
-            #         print(tf,s)
-            #         self.ws.last_dfs[tf][s].info()
-
-
+    @duration_time
+    def check_fast(self):
+        poss = self._check_position()
+        self.ws.preprocessing(self.charts, poss)
+        dfs = self.get_deep_copy_last_dfs()
+        tf1 = self.timeframes[0]
+        
+        # Получаем все даты один раз
+        dates_df1 = dfs[tf1][self.symbols[0]]['ms'].values  # numpy array вместо list
+        
+        # Предварительно индексируем данные для быстрой фильтрации
+        indexed_dfs = {}
+        for tf in dfs:
+            indexed_dfs[tf] = {}
+            for s in dfs[tf]:
+                df = dfs[tf][s]
+                # Создаем индекс по времени для быстрого поиска
+                indexed_dfs[tf][s] = df.set_index('ms').sort_index()
+        
+        for d in dates_df1:
+            # Быстрая фильтрация через .loc
+            for tf in indexed_dfs:
+                for s in indexed_dfs[tf]:
+                    filtered_df = indexed_dfs[tf][s].loc[:d].reset_index()
+                    self.ws.last_dfs[tf][s] = filtered_df
+            
+            need_pos = self.ws()
+            
+            # Оптимизируем получение последних цен
+            last_prices = {}
+            last_xs = {}
+            for s in self.symbols:
+                last_row = self.ws.last_dfs[tf1][s].iloc[-1]
+                last_prices[s] = last_row['close']
+                last_xs[s] = last_row['x']
+            
+            if self.close_on_time:
+                last_row = self.ws.last_dfs[tf1][self.symbols[0]].iloc[-1]
+                time_close = self.close_map[last_row['weekday']]
+                if last_row['ms'].hour >= time_close[0] and last_row['ms'].minute >= time_close[1]:
+                    for s in need_pos:
+                        need_pos[s] = 0
+            
+            self.work_need_pos(need_pos, last_prices, last_xs)
+            data = self.trade_data[self.symbols[0]]
+            with open('logs/test_log.txt','a') as f:
+                content = '\n'
+                for k in ('total','count','amount','total_wfees_per','pos','mp','fees'):
+                    content += k + ': ' + str(data[k]) + ' '
+                f.write(content)
 
     
+    @duration_time
+    def check_fast_vectorized(self):
+        poss = self._check_position()
+        self.ws.preprocessing(self.charts, poss)
+        dfs = self.get_deep_copy_last_dfs()
+        tf1 = self.timeframes[0]
+        
+        # Создаем единый DataFrame для всех символов на основном таймфрейме
+        master_dates = dfs[tf1][self.symbols[0]]['ms'].values
+        
+        # Предварительная загрузка всех данных в память
+        preloaded_data = {}
+        for tf in dfs:
+            preloaded_data[tf] = {}
+            for s in dfs[tf]:
+                df = dfs[tf][s].copy()
+                df['timestamp'] = pd.to_datetime(df['ms'])
+                preloaded_data[tf][s] = df.set_index('timestamp').sort_index()
+        
+        # Основной цикл по датам
+        for i, current_date in enumerate(master_dates):
+            # Батч-обновление всех данных
+            for tf in preloaded_data:
+                for s in preloaded_data[tf]:
+                    filtered_data = preloaded_data[tf][s].loc[:current_date]
+                    self.ws.last_dfs[tf][s] = filtered_data.reset_index()
+            
+            # Вызов логики торговли
+            need_pos = self.ws()
+            
+            # Быстрое получение последних значений
+            last_prices = {}
+            last_xs = {}
+            for s in self.symbols:
+                last_row = self.ws.last_dfs[tf1][s].iloc[-1]
+                last_prices[s] = last_row['close']
+                last_xs[s] = last_row['x']
+            
+            # Проверка времени закрытия
+            if self.close_on_time:
+                last_row = self.ws.last_dfs[tf1][self.symbols[0]].iloc[-1]
+                time_close = self.close_map[last_row['weekday']]
+                if last_row['ms'].hour >= time_close[0] and last_row['ms'].minute >= time_close[1]:
+                    need_pos = {s: 0 for s in need_pos}
+            
+            self.work_need_pos(need_pos, last_prices, last_xs)
+
+    @duration_time
+    def check_fast_cached(self):
+        poss = self._check_position()
+        self.ws.preprocessing(self.charts, poss)
+        dfs = self.get_deep_copy_last_dfs()
+        tf1 = self.timeframes[0]
+        
+        # Создаем кэш для отфильтрованных данных
+        filter_cache = {}
+        
+        dates_df1 = dfs[tf1][self.symbols[0]]['ms'].values
+        prev_date = None
+        
+        for current_date in dates_df1:
+            # Используем кэш для инкрементальной фильтрации
+            for tf in dfs:
+                for s in dfs[tf]:
+                    cache_key = (tf, s)
+                    if cache_key not in filter_cache:
+                        # Первая итерация - полная фильтрация
+                        filtered_df = dfs[tf][s][dfs[tf][s]['ms'] <= current_date]
+                        filter_cache[cache_key] = filtered_df
+                    else:
+                        # Инкрементальное обновление - только новые строки
+                        prev_data = filter_cache[cache_key]
+                        new_data = dfs[tf][s][
+                            (dfs[tf][s]['ms'] > prev_date) & 
+                            (dfs[tf][s]['ms'] <= current_date)
+                        ]
+                        if len(new_data) > 0:
+                            filtered_df = pd.concat([prev_data, new_data], ignore_index=True)
+                            filter_cache[cache_key] = filtered_df
+                        else:
+                            filtered_df = prev_data
+                    
+                    self.ws.last_dfs[tf][s] = filtered_df
+            
+            prev_date = current_date
+            
+            # Остальная логика без изменений
+            need_pos = self.ws()
+            last_prices = {s: self.ws.last_dfs[tf1][s].iloc[-1]['close'] for s in self.symbols}
+            last_xs = {s: self.ws.last_dfs[tf1][s].iloc[-1]['x'] for s in self.symbols}
+            
+            if self.close_on_time:
+                last_row = self.ws.last_dfs[tf1][self.symbols[0]].iloc[-1]
+                time_close = self.close_map[last_row['weekday']]
+                if last_row['ms'].hour >= time_close[0] and last_row['ms'].minute >= time_close[1]:
+                    for s in need_pos:
+                        need_pos[s] = 0
+            
+            self.work_need_pos(need_pos, last_prices, last_xs)
+
     def check_window(self,window_size=150):
         ...
     
     def check_child(self,timeframe='5min'):
         ...
-
-
-
-
-    
-    def visualize_results(self, symbol, figsize=(15, 12), save_path=None):
-        """
-        Визуализация результатов торгов для конкретного символа
-        
-        Args:
-            symbol: символ для визуализации
-            figsize: размер фигуры
-            save_path: путь для сохранения графика (опционально)
-        """
-        if symbol not in self.symbols:
-            print(f"Символ {symbol} не найден")
-            return
-            
-        trade_data = self.trade_data[symbol]
-        
-        # Создаем фигуру с несколькими subplots
-        fig, axes = plt.subplots(3, 1, figsize=figsize, height_ratios=[3, 1, 1])
-        fig.suptitle(f'Результаты торгов для {symbol}', fontsize=16, fontweight='bold')
-        
-        # 1. График цены с точками входа/выхода
-        self._plot_price_with_trades(axes[0], symbol, trade_data)
-        
-        # 2. График позиции
-        self._plot_position(axes[1], symbol, trade_data)
-        
-        # 3. График эквити
-        self._plot_equity(axes[2], trade_data)
-        
-        plt.tight_layout()
-        
-        if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
-            print(f"График сохранен в {save_path}")
-        
-        plt.show()
-    
-    def _plot_price_with_trades(self, ax, symbol, trade_data):
-        """График цены с точками входа и выхода"""
-        # Получаем данные цены (используем первый таймфрейм)
-        tf1 = self.timeframes[0]
-        price_data = self.charts[tf1][symbol].copy()
-        
-        if not pd.api.types.is_datetime64_any_dtype(price_data['ms']):
-            price_data['ms'] = pd.to_datetime(price_data['ms'], format='%Y-%m-%d %H:%M:%S')
-        
-        # Рисуем цену
-        ax.plot(price_data['ms'], price_data['close'], label='Цена закрытия', linewidth=1, alpha=0.7, color='black')
-        
-        # Добавляем точки входа в лонги
-        if trade_data['o_longs']:
-            long_dates, long_prices = zip(*trade_data['o_longs'])
-            ax.scatter(long_dates, long_prices, color='green', marker='^', s=50, 
-                      label='Открытие лонг', alpha=0.7, zorder=5)
-        
-        # Добавляем точки входа в шорты
-        if trade_data['o_shorts']:
-            short_dates, short_prices = zip(*trade_data['o_shorts'])
-            ax.scatter(short_dates, short_prices, color='red', marker='v', s=50, 
-                      label='Открытие шорт', alpha=0.7, zorder=5)
-        
-        # Добавляем точки закрытия лонгов
-        if trade_data['c_longs']:
-            close_long_dates, close_long_prices = zip(*trade_data['c_longs'])
-            ax.scatter(close_long_dates, close_long_prices, color='blue', marker='o', s=30, 
-                      label='Закрытие лонг', alpha=0.7, zorder=5)
-        
-        # Добавляем точки закрытия шортов
-        if trade_data['c_shorts']:
-            close_short_dates, close_short_prices = zip(*trade_data['c_shorts'])
-            ax.scatter(close_short_dates, close_short_prices, color='orange', marker='o', s=30, 
-                      label='Закрытие шорт', alpha=0.7, zorder=5)
-        
-        ax.set_ylabel('Цена')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        ax.set_title('График цены с точками входа/выхода')
-        
-        # Форматирование дат
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
-        ax.xaxis.set_major_locator(mdates.MonthLocator())
-        plt.setp(ax.xaxis.get_majorticklabels(), rotation=45)
-    
-    def _plot_position(self, ax, symbol, trade_data):
-        """График позиции"""
-        # Собираем все точки изменения позиции
-        all_events = []
-        
-        # Добавляем открытия лонгов
-        for date, price in trade_data['o_longs']:
-            all_events.append((date, price, 'open_long'))
-        
-        # Добавляем открытия шортов
-        for date, price in trade_data['o_shorts']:
-            all_events.append((date, price, 'open_short'))
-        
-        # Добавляем закрытия лонгов
-        for date, price in trade_data['c_longs']:
-            all_events.append((date, price, 'close_long'))
-        
-        # Добавляем закрытия шортов
-        for date, price in trade_data['c_shorts']:
-            all_events.append((date, price, 'close_short'))
-        
-        # Сортируем по дате
-        all_events.sort(key=lambda x: x[0])
-        
-        if all_events:
-            # Восстанавливаем историю позиций
-            dates = [event[0] for event in all_events]
-            positions = [0]  # Начинаем с нулевой позиции
-            
-            for event in all_events:
-                date, price, event_type = event
-                current_pos = positions[-1]
-                
-                if event_type == 'open_long':
-                    # Находим соответствующую сделку чтобы определить размер позиции
-                    # Это упрощенная версия - в реальности нужно отслеживать размер позиции
-                    positions.append(1)  # Предполагаем единичную позицию
-                elif event_type == 'open_short':
-                    positions.append(-1)  # Предполагаем единичную позицию
-                elif event_type == 'close_long':
-                    positions.append(0)
-                elif event_type == 'close_short':
-                    positions.append(0)
-            
-            # Убираем начальный 0 и строим ступенчатый график
-            positions = positions[1:]
-            ax.step(dates, positions, where='post', linewidth=2, color='purple')
-            
-            # Заливка для лонгов и шортов
-            ax.fill_between(dates, positions, 0, where=np.array(positions) > 0, 
-                           alpha=0.3, color='green', label='Лонг позиция')
-            ax.fill_between(dates, positions, 0, where=np.array(positions) < 0, 
-                           alpha=0.3, color='red', label='Шорт позиция')
-        
-        ax.set_ylabel('Позиция')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        ax.set_title('График позиции')
-        ax.axhline(y=0, color='black', linestyle='-', alpha=0.5)
-    
-    def _plot_equity(self, ax, trade_data):
-        """График эквити"""
-        equity = trade_data['equity']
-        equity_fee = trade_data['equity_fee']
-        
-        # Создаем временную ось на основе количества точек
-        x_points = range(len(equity))
-        
-        ax.plot(x_points, equity, label='Equity (без комиссий)', linewidth=2, color='blue')
-        ax.plot(x_points, equity_fee, label='Equity (с комиссиями)', linewidth=2, color='red')
-        
-        ax.set_ylabel('Эквити')
-        ax.set_xlabel('Номер сделки')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        ax.set_title('График эквити')
-        
-        # Добавляем горизонтальную линию на уровне 0
-        ax.axhline(y=0, color='black', linestyle='-', alpha=0.5)
     
     def print_statistics(self, symbol):
         """Печать статистики по торгам"""
