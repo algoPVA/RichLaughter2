@@ -7,7 +7,7 @@ class WorkWS(WSBase):
     def __init__(self, symbols, timeframes, positions, middle_price, parameters):
         super().__init__(symbols, timeframes, positions, middle_price, parameters)
         """period_dc"""
-        self.period_dc = self.parameters['period_dc']
+        self.period_dc = parameters['period_dc']
 
     def preprocessing(self, dfs, poss):
         self.update_poss_mps(poss)

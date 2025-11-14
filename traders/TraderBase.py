@@ -23,6 +23,7 @@ class TraderBase:
         self.error_log = { symbol:
             os.path.join(folder_error,sufix_debug + '_' + symbol + '.txt')
             for symbol in self.symbols}
+        self.error_log['main'] = os.path.join(folder_error,sufix_debug + '_' + 'main' + '.txt')
 
     def _debug_folder_create(self,sufix_debug):
         folder_debug = 'logs/debug_logs' + sufix_debug

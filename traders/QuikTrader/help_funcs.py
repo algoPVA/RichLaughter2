@@ -157,6 +157,42 @@ def get_pos_futures(qp_provider:QuikPy,sec_code):
     return 0
 
 @provider
+def get_current_price(qp_provider: QuikPy, sec_code: str, class_code='SPBFUT'):
+    '''Получение текущей цены инструмента'''
+    param_data = qp_provider.get_param_ex(class_code, sec_code, "LAST")['data']
+    current_price = float(param_data['param_value'])
+    print(param_data)
+    print(current_price)
+    
+@provider
+def debug_futures_holdings(qp_provider: QuikPy, sec_code: str):
+    '''Отладочная функция для просмотра всех полей позиции'''
+    futures_holdings = qp_provider.get_futures_holdings()['data']
+    
+    for position in futures_holdings:
+        if position['sec_code'] == sec_code:
+            print("=== ВСЕ ПОЛЯ ПОЗИЦИИ ===")
+            for key, value in position.items():
+                print(f"{key}: {value}")
+            print("========================")
+            
+            # Основные поля для расчета
+            total_net = position['totalnet']
+            avg_price = position['avrposnprice']
+            open_equity = position['open_equity']  # Возможно, это то что нужно
+            realized_pl = position['realized_pl']
+            
+            print(f"Позиция: {total_net} лотов")
+            print(f"Средняя цена: {avg_price}")
+            print(f"Открытая вариационная маржа: {open_equity}")
+            print(f"Реализованный P&L: {realized_pl}")
+            
+            return position
+    
+    print(f"Позиция по {sec_code} не найдена")
+    return None
+
+@provider
 def get_glass(qp_provider:QuikPy,sec_code,class_code='SPBFUT'):
     '''получение стакана'''
     glass = qp_provider.get_quote_level2(class_code, sec_code)["data"]

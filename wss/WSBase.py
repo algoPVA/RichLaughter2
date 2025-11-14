@@ -26,7 +26,7 @@ class WSBase:
         self.timeframes = timeframes
         self.positions = positions.copy()
         self.middle_price = middle_price
-        self.parameters = parameters
+        # self.parameters = parameters
         self.need_pos = positions.copy()
         self.last_dfs = {
             timeframe:{symbol: pd.DataFrame() for symbol in symbols}
@@ -49,7 +49,7 @@ class WSBase:
             self.positions[s] = poss[s]['pos']
             self.middle_price[s] = poss[s]['mp']
 
-    def preprocessing(self,dfs,poss):
+    def preprocessing(self,dfs:Dict,poss:Dict):
         """
         Получаем такие данные:
         dfs = {
@@ -73,13 +73,13 @@ class WSBase:
             }
         }
         Здесь необходимо произвести обработку в соответсвии со стратегией
-        self.update_poss_mps(poss)
+        self.update_poss_mps(poss) #если необходимо
         for s in dfs['tf1']:
             df = dfs['tf1'][s]
             df = add_bollinger(df,**parameters)
             self.last_dfs['tf1'][s] = df
         """
-        
+        self.last_dfs = dfs.copy()
         return self.last_dfs
 
     def __call__(self, *args, **kwds):
