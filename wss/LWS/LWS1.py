@@ -45,7 +45,7 @@ class LWS1_FIRSTGRID(WSBase):
         for lvl in self.lvls:
             if row['close'] <= lvl:
                 new_pos += 1
-        self.correct_pos(new_pos,s)
+        new_pos = self.correct_pos(new_pos,s)
         self.need_pos[s] = new_pos
         return True
     
@@ -62,7 +62,7 @@ class LWS1_FIRSTGRID(WSBase):
         for lvl in self.lvls:
             if row['close'] >= lvl:
                 new_pos -= 1
-        self.correct_pos(new_pos,s)
+        new_pos = self.correct_pos(new_pos,s)
         self.need_pos[s] = new_pos
         return True
     
@@ -81,7 +81,7 @@ class LWS1_FIRSTGRID(WSBase):
                 new_pos += 1
             if row['close'] >= lvl > self.middle_lvl: #short
                 new_pos -= 1
-        self.correct_pos(new_pos,s)
+        new_pos = self.correct_pos(new_pos,s)
         self.need_pos[s] = new_pos
         return True
     
