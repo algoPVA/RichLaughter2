@@ -26,11 +26,11 @@ bot_on_ticker = [
     {
         'ws': LWS1_AUTOGRID,
         'ws_params':{
-            'start':11.360,
-            'end':11.440,
-            'amount_lvl': 5,
+            'start':11.290,
+            'end':11.480,
+            'amount_lvl': 8,
             'us_lvl': 11.540,
-            'ds_lvl': 11.260,
+            'ds_lvl': 11.140,
             'grid_dir': 0,
         },
         'dts': [
@@ -93,23 +93,23 @@ bot_on_ticker = [
         ]
 
     },
-    {
-        'ws': LWS2_SWIMGRID,
-        'ws_params':{
-            'amount_lvl': 3,
-            'per_step':0.4,
-            'grid_dir': 1,
-            'keep':False
-        },
-        'dts': [
-            {
-                'ss':('GZZ5',),
-                'tfs':('M5',),
-                'qs': (1,)
-            }
-        ]
+    # {
+    #     'ws': LWS2_SWIMGRID,
+    #     'ws_params':{
+    #         'amount_lvl': 3,
+    #         'per_step':0.4,
+    #         'grid_dir': 1,
+    #         'keep':False
+    #     },
+    #     'dts': [
+    #         {
+    #             'ss':('GZZ5',),
+    #             'tfs':('M5',),
+    #             'qs': (1,)
+    #         }
+    #     ]
 
-    },
+    # },
 ]
 
 def init_trader() -> list[QuikTrader]:

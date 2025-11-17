@@ -119,10 +119,20 @@ if __name__ == "__main__":
     listdir = os.listdir(folder)
     output_folder = 'data_for_tests\data_from_moex5'
     # output_folder = folder
+    save_format = '.parquet'
+    # save_format = '.csv'
     for f in listdir:
         filepath = os.path.join(folder,f)
-        df = pd.read_csv(filepath)
+        if filepath.endswith('.parquet'):
+            df = pd.read_parquet(filepath)
+        else:
+            df = pd.read_csv(filepath)
         # df = convert_chart1to5(df)
         df = convert_timeframe(df,'5min')
         new_path = os.path.join(output_folder,'_5'+f)
-        df.to_csv(new_path)
+        if save_format == '.csv':
+            new_path = new_path.replace('.parquet','.csv')
+            df.to_csv(new_path)
+        if save_format == '.parquet':
+            new_path = new_path.replace('.csv','.parquet')
+            df.to_parquet(new_path)
