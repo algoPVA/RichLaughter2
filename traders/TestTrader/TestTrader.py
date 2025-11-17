@@ -565,6 +565,7 @@ class TestTrader(TraderBase):
         print(f"\n=== СТАТИСТИКА ДЛЯ {symbol} ===")
         print(f"Всего сделок: {td['count']}")
         print(f"Общий PnL: {td['total']:.2f}")
+        print(f"Комиссия ВТБ: {(len(td['o_longs']) + len(td['o_shorts']))*2}")
         print(f"Комиссии: {td['fees']:.2f}")
         print(f"PnL с комиссиями (%): {td['total_wfees_per']:.2f}%")
         
@@ -578,7 +579,6 @@ class TestTrader(TraderBase):
         print(f"Открыто шортов: {len(td['o_shorts'])}")
         print(f"Закрыто лонгов: {len(td['c_longs'])}")
         print(f"Закрыто шортов: {len(td['c_shorts'])}")
-        
         # Рассчитываем дополнительную статистику
         if td['count'] > 0:
             avg_trade = td['total'] / td['count']

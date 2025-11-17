@@ -246,7 +246,8 @@ class LWS2_SWIMGRID(WSBase):
             'amount_lvl': 5,
             'per_step':0.1,
             'grid_dir': 1,
-            'keep':False
+            'keep':False,
+            'reset_n':2
         }
         """
         super().__init__(symbols, timeframes, positions, middle_price, parameters)
@@ -258,6 +259,10 @@ class LWS2_SWIMGRID(WSBase):
         self.buff = self.per_step / 2
         self.grid_dir = parameters['grid_dir']
         self.keep = parameters['keep']
+        self.reset_n = parameters['reset_n']
+        self.up_lvls = {s: None for s in self.symbols}
+        self.down_lvls = {s: None for s in self.symbols}
+        self.middle_lvls = {s: None for s in self.symbols}
         if self.grid_dir == 1: #long
             self.grid_func = self.long_grid
         elif self.grid_dir == -1:
@@ -281,8 +286,8 @@ class LWS2_SWIMGRID(WSBase):
         for i in range(self.amount_lvl):
             lvl = start_lvl - self.step[s]*i
             self.lvls[s].append(lvl)
-        self.up_lvl = start_lvl + self.step[s]
-        self.down_lvl = start_lvl - self.step[s] * self.amount_lvl
+        self.up_lvls[s] = start_lvl + self.step[s] * self.reset_n
+        self.down_lvls[s] = start_lvl - self.step[s] * (self.amount_lvl + self.reset_n - 1)
 
     def short_init_grid(self,s,row):
         self.lvls[s].clear()
@@ -291,8 +296,8 @@ class LWS2_SWIMGRID(WSBase):
         for i in range(self.amount_lvl):
             lvl = start_lvl + self.step[s]*i
             self.lvls[s].append(lvl)
-        self.up_lvl = start_lvl + self.step[s] * self.amount_lvl
-        self.down_lvl = start_lvl - self.step[s]
+        self.up_lvls[s] = start_lvl + self.step[s] * (self.amount_lvl + self.reset_n - 1)
+        self.down_lvls[s] = start_lvl - self.step[s] * self.reset_n
 
     def neutral_init_grid(self,s,row):
         self.lvls[s].clear()
@@ -305,9 +310,9 @@ class LWS2_SWIMGRID(WSBase):
             self.lvls[s].append(lvl)
         self.lvls[s].append(middle_lvl)
         self.lvls[s].sort()
-        self.up_lvl = max(self.lvls[s]) + self.step[s]
-        self.down_lvl = min(self.lvls[s]) - self.step[s]
-        self.middle_lvl = middle_lvl
+        self.up_lvls[s] = max(self.lvls[s]) + self.step[s] * self.reset_n
+        self.down_lvls[s] = min(self.lvls[s]) - self.step[s] * self.reset_n
+        self.middle_lvls[s] = middle_lvl
 
     def long_grid(self,row,s):
         new_pos = -1
@@ -350,13 +355,13 @@ class LWS2_SWIMGRID(WSBase):
         new_pos = 0
         buff = self.step[s] / 2
         for lvl in self.lvls[s]:
-            if lvl < self.middle_lvl:
+            if lvl < self.middle_lvls[s]:
                 if row['close'] <= lvl:
                     new_pos += 1
                 elif lvl + buff >= row['close'] and self.positions[s] > 0:
                     new_pos = None
                     break
-            elif lvl > self.middle_lvl:
+            elif lvl > self.middle_lvls[s]:
                 if row['close'] >= lvl:
                     new_pos -= 1
                 elif lvl - buff <= row['close'] and self.positions[s] < 0:
@@ -379,8 +384,8 @@ class LWS2_SWIMGRID(WSBase):
             if self.first_run[s]:
                 self.first_run[s] = False
                 self.update_grid(s,row)
-                print('LWS2_SWIMGRID:',s,self.lvls[s])
-            if row['close'] > self.up_lvl or row['close'] < self.down_lvl:
+                print('LWS2_SWIMGRID:',s,self.lvls[s],self.up_lvls[s],self.down_lvls[s])
+            if row['close'] > self.up_lvls[s] or row['close'] < self.down_lvls[s]:
                 self.update_grid(s,row)
             self.grid_func(row,s)
             # print(self.lvls[s],row['close'],self.need_pos[s])
@@ -393,7 +398,8 @@ class LWS2_PSG(WSBase):
         parameters = {
             'amount_lvl': 5,
             'per_step':0.1,
-            'keep':False
+            'keep':False,
+            'reset_n':2
         }
         """
         super().__init__(symbols, timeframes, positions, middle_price, parameters)
@@ -408,6 +414,7 @@ class LWS2_PSG(WSBase):
         self.grid_dirs[self.symbols[1]] = -1
         self.up_lvls = {s: None for s in self.symbols}
         self.down_lvls = {s: None for s in self.symbols}
+        self.reset_n = parameters['reset_n']
 
     def update_grid(self,s,row):
         self.step[s] = (row['close'] / 100) * self.per_step
@@ -429,8 +436,8 @@ class LWS2_PSG(WSBase):
         for i in range(self.amount_lvl):
             lvl = start_lvl - self.step[s]*i
             self.lvls[s].append(lvl)
-        self.up_lvls[s] = start_lvl + self.step[s]
-        self.down_lvls[s] = start_lvl - self.step[s] * self.amount_lvl
+        self.up_lvls[s] = start_lvl + self.step[s] * self.reset_n
+        self.down_lvls[s] = start_lvl - self.step[s] * (self.amount_lvl + self.reset_n - 1)
 
     def short_init_grid(self,s,row):
         self.lvls[s].clear()
@@ -439,8 +446,8 @@ class LWS2_PSG(WSBase):
         for i in range(self.amount_lvl):
             lvl = start_lvl + self.step[s]*i
             self.lvls[s].append(lvl)
-        self.up_lvls[s] = start_lvl + self.step[s] * self.amount_lvl
-        self.down_lvls[s] = start_lvl - self.step[s]
+        self.up_lvls[s] = start_lvl + self.step[s] * (self.amount_lvl + self.reset_n - 1)
+        self.down_lvls[s] = start_lvl - self.step[s] * self.reset_n
 
     def long_grid(self,row,s):
         new_pos = -1
@@ -491,7 +498,7 @@ class LWS2_PSG(WSBase):
             if self.first_run[s]:
                 self.first_run[s] = False
                 self.update_grid(s,row)
-                print('LWS2_PSG:',s,self.grid_dirs[s],self.lvls[s])
+                print('LWS2_PSG:',s,self.grid_dirs[s],self.lvls[s],self.up_lvls[s],self.down_lvls[s])
             if row['close'] > self.up_lvls[s] or row['close'] < self.down_lvls[s]:
                 self.update_grid(s,row)
                 # print(s,row['close'],self.lvls[s])

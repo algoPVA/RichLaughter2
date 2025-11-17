@@ -81,7 +81,8 @@ bot_on_ticker = [
         'ws_params':{
             'amount_lvl': 4,
             'per_step':0.05,
-            'keep':False
+            'keep':False,
+            'reset_n':2
         },
         'dts': [
             {
