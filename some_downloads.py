@@ -5,14 +5,14 @@ today = date.today()
 start_date = str(today - timedelta(days=30))
 # # start_date = '2025-02-01'
 
-# loader = ApiMoexLoader('IMOEXF','RFUD','forts','futures')
-# loader.save_df(start_date,timeframe=1,sformat='parquet')
-
-# loader = ApiMoexLoader('MMZ5','RFUD','forts','futures')
-# loader.save_df(start_date,timeframe=1,sformat='parquet')
-
-loader = ApiMoexLoader('CNYRUBF','RFUD','forts','futures')
+loader = ApiMoexLoader('IMOEXF','RFUD','forts','futures')
 loader.save_df(start_date,timeframe=1,sformat='parquet')
 
-loader = ApiMoexLoader('CRZ5','RFUD','forts','futures')
+loader = ApiMoexLoader('MMZ5','RFUD','forts','futures')
 loader.save_df(start_date,timeframe=1,sformat='parquet')
+
+# loader = ApiMoexLoader('CNYRUBF','RFUD','forts','futures')
+# loader.save_df(start_date,timeframe=1,sformat='parquet')
+
+# loader = ApiMoexLoader('CRZ5','RFUD','forts','futures')
+# loader.save_df(start_date,timeframe=1,sformat='parquet')
